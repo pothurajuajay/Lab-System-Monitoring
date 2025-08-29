@@ -1,0 +1,88 @@
+Here’s a step-by-step guide for your project:
+
+copy the code from Lab-System-Monitoring.txt and run the below command
+
+---
+
+## 🛠 How to Create an EXE from Python Script
+
+### 1️⃣ Install PyInstaller
+
+Open Command Prompt (or PowerShell) and run:
+
+```bash
+pip install pyinstaller
+```
+
+---
+
+### 2️⃣ Navigate to Your Project Folder
+
+Go to the directory where your `.py` file is saved (example: `main.py`):
+
+```bash
+cd C:\Users\CSELAB\labsystem
+```
+
+---
+
+### 3️⃣ Create the EXE
+
+Run PyInstaller with your script:
+
+```bash
+pyinstaller --onefile --windowed main.py
+```
+
+📌 Explanation:
+
+* `--onefile` → Packs everything into **a single exe file**
+* `--windowed` → Hides the console window (useful for GUI apps like Tkinter)
+
+If you want an icon, add:
+
+```bash
+pyinstaller --onefile --windowed --icon=icon.ico main.py
+```
+
+---
+
+### 4️⃣ Find Your EXE
+
+After successful build, check inside the **dist/** folder.
+Example:
+
+```
+C:\Users\CSELAB\labsystem\dist\main.exe
+```
+
+---
+
+### 5️⃣ Keep Required Files Together
+
+* Your `.exe` file will need **images** (`login.png`, `admin.png`) and possibly database configs.
+* Place them in the **same folder as the .exe**, or adjust your script to use relative paths.
+
+---
+
+### 6️⃣ Test the EXE
+
+Double-click `main.exe` → it should launch your Tkinter app without needing Python installed. ✅
+
+---
+
+⚡ **Pro Tips**
+
+* If your program uses MySQL, make sure MySQL is running on the server.
+* If you face missing module errors, try:
+
+  ```bash
+  pyinstaller --onefile --hidden-import=mysql.connector --hidden-import=getmac main.py
+  ```
+* Use `--noconfirm --clean` for a fresh build:
+
+  ```bash
+  pyinstaller --onefile --windowed --noconfirm --clean main.py
+  ```
+
+---
