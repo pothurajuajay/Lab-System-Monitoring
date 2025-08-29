@@ -153,5 +153,3 @@ It provides authentication, session tracking, system monitoring, and administrat
 
 ---
 
-Would you like me to make this README in **GitHub style (Markdown)** with badges (Python/MySQL/License) so you can directly use it on GitHub?
-
