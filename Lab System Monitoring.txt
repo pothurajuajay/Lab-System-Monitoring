@@ -1,0 +1,692 @@
+import tkinter as tk
+from tkinter import ttk, messagebox, font       
+import subprocess
+import mysql.connector
+import os
+import keyboard
+import socket
+from datetime import datetime
+import time
+from tkinter import PhotoImage
+import signal
+import atexit
+from getmac import get_mac_address as get_physical_mac_address
+import winreg as reg
+from elevate import elevate
+import calendar
+
+# Define custom theme colors
+BG_COLOR = '#FFFFFF'  # Background color
+FG_COLOR = '#000000'  # Foreground color
+BTN_COLOR = '#4CAF50'  # Button color
+BTN_HOVER_COLOR = '#45a049'  # Button hover color   
+FONT_STYLE = ("Helvetica", 12)
+
+# Database configuration
+db_config = {
+    'host': '192.168.3.25',
+    'user': 'root',
+    'password': 'Ideal@C$e',  # Ensure to secure your password properly
+    'database': 'project1'
+}
+
+latest_logged_in_user = None
+
+def show_custom_dialog(title, data, headers):
+    dialog = tk.Toplevel()
+    dialog.title(title)
+    dialog.configure(bg=BG_COLOR)
+    
+    tree = ttk.Treeview(dialog, columns=headers, show="headings")
+    for header in headers:
+        tree.heading(header, text=header)
+    for row in data:
+        tree.insert("", "end", values=row)
+    tree.pack(expand=True, fill="both")
+
+    dialog.mainloop()
+
+def shutdown_handler(signum, frame):
+    print("Shutting down system...")
+    shutdown_system()
+
+signal.signal(signal.SIGINT, shutdown_handler)
+signal.signal(signal.SIGTERM, shutdown_handler)
+signal.signal(signal.SIGBREAK, shutdown_handler)
+
+def shutdown_system():
+    global latest_logged_in_user
+    try:
+        if latest_logged_in_user:
+            update_database(latest_logged_in_user)
+            print("User logged out successfully.")
+        else:
+            print("No user logged in.")
+        
+        if os.name == 'nt':
+            subprocess.run(["shutdown", "/s", "/t", "0"], check=True)
+        else:
+            subprocess.run(["shutdown", "now"], check=True)
+        
+    except Exception as e:
+        print(f"Error shutting down: {e}")
+
+def update_database(username):
+    try:
+        connection = mysql.connector.connect(**db_config)
+        cursor = connection.cursor()
+        query = "UPDATE log_details SET logout_time = %s WHERE user_name = %s AND logout_time IS NULL"
+        logout_time = datetime.now()
+        cursor.execute(query, (logout_time, username))
+        connection.commit()
+        cursor.close()  
+        connection.close()
+        print("Logout time updated in log_details table")
+    except mysql.connector.Error as e:
+        print(f"Error updating logout time in log_details table: {e}")
+
+def capture_logout_time():
+    global latest_logged_in_user
+    if latest_logged_in_user:
+        update_database(latest_logged_in_user)
+        print("User logged out successfully.")
+    else:
+        print("No user logged in.")
+
+atexit.register(capture_logout_time)
+
+def keep_window_on_top(root):
+    root.lift()
+    root.after(100, lambda: keep_window_on_top(root))  # Run keep_window_on_top again after 100ms
+
+def disable_ctrl_alt_delete():
+    try:
+        reg_key = reg.OpenKey(reg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", 0, reg.KEY_WRITE)
+        reg.SetValueEx(reg_key, "DisableTaskMgr", 0, reg.REG_DWORD, 1)
+        reg.CloseKey(reg_key)
+        messagebox.showinfo("Success", "Ctrl+Alt+Delete has been disabled.")
+    except Exception as e:
+        messagebox.showerror("Error", "Failed to disable Ctrl+Alt+Delete: {}".format(e))
+
+def enable_ctrl_alt_delete():
+    try:
+        reg_key = reg.OpenKey(reg.HKEY_LOCAL_MACHINE, r"SOFTWARE\Microsoft\Windows\CurrentVersion\Policies\System", 0, reg.KEY_WRITE)
+        reg.DeleteValue(reg_key, "DisableTaskMgr")
+        reg.CloseKey(reg_key)
+        messagebox.showinfo("Success", "Ctrl+Alt+Delete has been enabled.")
+    except Exception as e:
+        messagebox.showerror("Error", "Failed to enable Ctrl+Alt+Delete: {}".format(e))
+
+def toggle_ctrl_alt_delete(button):
+    if button.config('text')[-1] == 'Disable Ctrl+Alt+Delete':
+        disable_ctrl_alt_delete()
+        button.config(text='Enable Ctrl+Alt+Delete')
+    else:
+        enable_ctrl_alt_delete()
+        button.config(text='Disable Ctrl+Alt+Delete')
+
+def show_user_page(root):
+    root.destroy()  # Destroy the login window
+    user_page = tk.Tk()
+    user_page.title("User Page")
+    user_page.configure(bg=BG_COLOR)
+
+    # Override the close button
+    user_page.protocol("WM_DELETE_WINDOW", lambda: None)
+
+    # Define logout function
+    def logout():
+        update_database(latest_logged_in_user)
+        user_page.destroy()
+        create_gui()  # After logout, show the login window again
+
+    app_font = font.Font(family="Helvetica", size=12)
+
+    welcome_label = tk.Label(user_page, text=f"Welcome {latest_logged_in_user}!", font=app_font, bg=BG_COLOR, fg=FG_COLOR)
+    welcome_label.pack(side="top", pady=20)
+
+    logout_button = tk.Button(user_page, text="Logout", command=logout, font=app_font, bg=BTN_COLOR, fg=FG_COLOR)
+    logout_button.pack(side="top", pady=10)
+
+    user_page.mainloop()
+
+def login(username, password, root):
+    global latest_logged_in_user
+    try:
+        # Local authentication check
+        if username == "USER01" and password == "CSEDEPT":
+            latest_logged_in_user = username
+            root.destroy()
+            return
+        elif username == "USER02" and password == "CSEDEPT":
+            latest_logged_in_user = username
+            root.destroy()
+            return
+        elif username == "USER03" and password == "CSEDEPT":
+            latest_logged_in_user = username
+            root.destroy()
+            return
+        elif username == "USER04" and password == "CSEDEPT":
+            latest_logged_in_user = username
+            root.destroy()
+            return
+
+        # If it's not a local user, proceed with database authentication
+        conn = mysql.connector.connect(**db_config)
+        cursor = conn.cursor()
+        
+        query = "SELECT * FROM user_details WHERE user_name = %s AND password = %s"
+        cursor.execute(query, (username, password))
+        user = cursor.fetchone()
+        
+        if user:
+            # Check if the user is an admin
+            if username == "admin":
+                elevate()  # Request administrative privileges                                           
+                show_admin_page(root)
+            else:
+                # Update log_details with login information
+                ip_address = get_ip_address()
+                system_id = get_system_id(mac_address)
+                update_mac_address_in_log(username, system_id, ip_address, mac_address)
+
+                messagebox.showinfo("Success", "Login successful")
+                latest_logged_in_user = username
+                show_user_page(root)  # Display user-specific page
+        else:
+            messagebox.showerror("Error", "Invalid username or password")
+
+        cursor.close()
+        conn.close()
+        
+    except mysql.connector.Error as e:
+        messagebox.showerror("Error", f"Database error: {e}")
+                                                                                   
+def update_mac_address_in_log(username, system_id, ip_address, mac_address):
+    try:
+        connection = mysql.connector.connect(**db_config)
+        cursor = connection.cursor()
+        query = "INSERT INTO log_details (user_name, login_time, ip_address, system_id, mac_address) VALUES (%s, NOW(), %s, %s, %s)"
+        cursor.execute(query, (username, ip_address, system_id, mac_address))
+        connection.commit()
+        cursor.close()  
+        connection.close()
+        print("System ID, IP address, and MAC address updated in log_details table")
+    except mysql.connector.Error as e:
+        print(f"Error updating System ID, IP address, and MAC address in log_details table: {e}")
+
+def get_mac_address():
+    mac_address = get_physical_mac_address()
+    return mac_address
+
+mac_address = get_mac_address()
+
+def get_system_id(mac_address):
+    system_id = None
+    try:
+        connection = mysql.connector.connect(**db_config)
+        cursor = connection.cursor()
+        query = "SELECT system_id FROM mac_address_details WHERE mac_address = %s"
+        cursor.execute(query, (mac_address,))
+        result = cursor.fetchone()
+        if result:
+            system_id = result[0]
+        cursor.close()  
+        connection.close()
+    except mysql.connector.Error as e:
+        print(f"Error fetching system_id from database: {e}")
+    return system_id
+
+def get_ip_address():
+    try:
+        local_ip = socket.gethostbyname(socket.gethostname())
+        return local_ip
+    except Exception as e:
+        print(f"Error fetching IP address: {e}")
+        return None
+
+def block_keyboard():
+    # Block all keys except for Windows + R
+    blocked_keys = ["alt", "esc", "delete", "f1", "windows"]
+    for key in blocked_keys:
+        keyboard.block_key(key)
+
+def show_admin_page(root):
+    root.destroy()
+    admin_root = tk.Tk()
+    admin_root.title("Admin Page")
+    admin_root.configure(bg=BG_COLOR)
+
+    # Set background image
+    bg_image = PhotoImage(file=r"C:\Users\CSELAB\labsystem\images\admin.png")
+    bg_label = tk.Label(admin_root, image=bg_image)
+    bg_label.place(relwidth=1, relheight=1)
+    
+    # Set custom window size
+    window_width = 1000
+    window_height = 600
+    admin_root.geometry(f"{window_width}x{window_height}")
+
+    app_font = font.Font(family="Helvetica", size=14, weight="bold")
+
+    welcome_label = tk.Label(admin_root, text="Welcome Admin!", font=app_font, bg=BG_COLOR, fg=FG_COLOR)
+    welcome_label.pack(side="top", pady=20)
+
+    additional_label = tk.Label(admin_root, text="Mr.M.S.R.S.PRASAD", font=app_font, bg=BG_COLOR, fg=FG_COLOR)
+    additional_label.pack(side="top", pady=10)
+
+    degree_label = tk.Label(admin_root, text="M.Tech., [Ph.D]", font=("Helvetica", 8), bg=BG_COLOR, fg=FG_COLOR)
+    degree_label.pack(side="top", pady=0)
+
+    # Left-side frame for buttons
+    left_frame = tk.Frame(admin_root, bg=BG_COLOR)
+    left_frame.pack(side="left", fill="y", padx=20, pady=20)
+
+    style = ttk.Style()
+    style.configure("TButton", font=("Helvetica", 10), padding=(5, 2), background=BTN_COLOR, foreground=FG_COLOR)
+    
+    button_config = {'fill': 'x', 'pady': 2}
+
+    login_details_button = ttk.Button(left_frame, text="Show Login Details", command=show_login_details)
+    login_details_button.pack(**button_config)
+
+    view_system_button = ttk.Button(left_frame, text="System View", command=view_system)
+    view_system_button.pack(**button_config)
+
+    show_mac_addresses_button = ttk.Button(left_frame, text="Show MAC Addresses", command=show_mac_addresses)
+    show_mac_addresses_button.pack(**button_config)
+
+    add_mac_address_button = ttk.Button(left_frame, text="Add MAC Address", command=add_mac_address)
+    add_mac_address_button.pack(**button_config)
+
+    toggle_button = ttk.Button(left_frame, text="Disable Ctrl+Alt+Delete", command=lambda: toggle_ctrl_alt_delete(toggle_button))
+    toggle_button.pack(**button_config)
+
+    admin_root.mainloop()
+
+def show_mac_addresses():
+    try:
+        connection = mysql.connector.connect(**db_config)
+        cursor = connection.cursor()
+        query = "SELECT mac_address, system_id FROM mac_address_details"
+        cursor.execute(query)
+        mac_addresses = cursor.fetchall()
+        cursor.close()
+        connection.close()
+
+        if mac_addresses:
+            headers = ["MAC Address", "System ID"]
+            show_custom_dialog("MAC Addresses", mac_addresses, headers)
+        else:
+            messagebox.showinfo("MAC Addresses", "No MAC addresses found.")
+            
+    except mysql.connector.Error as err:
+        messagebox.showerror("Error", f"Error fetching MAC addresses: {err}")
+
+def add_mac_address():
+    def save_mac_address():
+        mac_address = mac_entry.get()
+        system_id = system_id_entry.get()
+
+        if not mac_address or not system_id:
+            messagebox.showinfo("Add MAC Address", "Please enter MAC address and system ID.")
+            return
+
+        try:
+            connection = mysql.connector.connect(**db_config)
+            cursor = connection.cursor()
+            query = "INSERT INTO mac_address_details (mac_address, system_id) VALUES (%s, %s)"
+            cursor.execute(query, (mac_address, system_id))
+            connection.commit()
+            cursor.close()
+            connection.close()
+            messagebox.showinfo("Add MAC Address", "MAC address added successfully.")
+            add_mac_address_window.destroy()
+        except mysql.connector.Error as err:
+            messagebox.showerror("Error", f"Error adding MAC address: {err}")
+
+    add_mac_address_window = tk.Toplevel()
+    add_mac_address_window.title("Add MAC Address")
+    add_mac_address_window.configure(bg=BG_COLOR)
+
+    mac_label = tk.Label(add_mac_address_window, text="MAC Address:", bg=BG_COLOR, fg=FG_COLOR)
+    mac_label.grid(row=0, column=0, padx=10, pady=10)
+    mac_entry = tk.Entry(add_mac_address_window, bg=BG_COLOR, fg=FG_COLOR)
+    mac_entry.grid(row=0, column=1, padx=10, pady=10)
+
+    system_id_label = tk.Label(add_mac_address_window, text="System ID:", bg=BG_COLOR, fg=FG_COLOR)
+    system_id_label.grid(row=1, column=0, padx=10, pady=10)
+    system_id_entry = tk.Entry(add_mac_address_window, bg=BG_COLOR, fg=FG_COLOR)
+    system_id_entry.grid(row=1, column=1, padx=10, pady=10)
+
+    save_button = tk.Button(add_mac_address_window, text="Save", command=save_mac_address, bg=BTN_COLOR, fg=FG_COLOR)
+    save_button.grid(row=2, column=0, columnspan=2, padx=10, pady=10)
+
+    add_mac_address_window.mainloop()
+
+def view_system():
+    system_app_path = r"C:\Program Files (x86)\Net Monitor for Employees Pro\bin\nmep_console.exe"
+    try:
+        subprocess.Popen(system_app_path)
+    except Exception as e:
+        messagebox.showerror("Error", f"Error opening system application: {e}")
+
+    try:
+        subprocess.Popen(system_app_path)
+    except Exception as e:
+        messagebox.showerror("Error", f"Error opening system application: {e}")
+
+class DatePicker:
+    def __init__(self, parent, entry):
+        self.parent = parent
+        self.entry = entry
+        self.top = tk.Toplevel(parent)
+        self.top.title("Select Date")
+        self.top.geometry("300x250")
+        self.year = datetime.now().year
+        self.month = datetime.now().month
+        self.selected_date = None
+        self.create_widgets()
+        self.show_calendar()
+
+    def create_widgets(self):
+        self.header_frame = tk.Frame(self.top, bg=BG_COLOR)
+        self.header_frame.pack(fill=tk.X)
+
+        self.prev_button = tk.Button(self.header_frame, text="<", command=self.prev_month, bg=BTN_COLOR, fg=FG_COLOR)
+        self.prev_button.pack(side=tk.LEFT)
+
+        self.month_label = tk.Label(self.header_frame, bg=BG_COLOR, fg=FG_COLOR)
+        self.month_label.pack(side=tk.LEFT, expand=True)
+
+        self.next_button = tk.Button(self.header_frame, text=">", command=self.next_month, bg=BTN_COLOR, fg=FG_COLOR)
+        self.next_button.pack(side=tk.RIGHT)
+
+        self.days_frame = tk.Frame(self.top, bg=BG_COLOR)
+        self.days_frame.pack(fill=tk.BOTH, expand=True)
+
+    def show_calendar(self):
+        for widget in self.days_frame.winfo_children():
+            widget.destroy()
+
+        cal = calendar.Calendar()
+        month_days = cal.monthdayscalendar(self.year, self.month)
+        month_name = calendar.month_name[self.month]
+        self.month_label.config(text=f"{month_name} {self.year}")
+
+        days_of_week = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"]
+        for day in days_of_week:
+            tk.Label(self.days_frame, text=day, bg=BG_COLOR, fg=FG_COLOR).grid(row=0, column=days_of_week.index(day))
+
+        for r, week in enumerate(month_days):
+            for c, day in enumerate(week):
+                if day == 0:
+                    tk.Label(self.days_frame, text="", bg=BG_COLOR).grid(row=r+1, column=c)
+                else:
+                    tk.Button(self.days_frame, text=str(day), command=lambda d=day: self.select_date(d), bg=BTN_COLOR, fg=FG_COLOR).grid(row=r+1, column=c)
+
+    def prev_month(self):
+        self.month -= 1
+        if self.month < 1:
+            self.month = 12
+            self.year -= 1
+        self.show_calendar()
+
+    def next_month(self):
+        self.month += 1
+        if self.month > 12:
+            self.month = 1
+            self.year += 1
+        self.show_calendar()
+
+    def select_date(self, day):
+        self.selected_date = f"{self.year}-{self.month:02d}-{day:02d}"
+        self.entry.delete(0, tk.END)
+        self.entry.insert(0, self.selected_date)
+        self.top.destroy()
+
+def show_login_details():
+    def search_login_details():
+        username = username_entry.get()
+        start_date = start_date_entry.get()
+        end_date = end_date_entry.get()
+
+        if not username and not start_date and not end_date:
+            messagebox.showinfo("Search", "Please enter a username or specify a date range.")
+            return
+
+        try:
+            connection = mysql.connector.connect(**db_config)
+            cursor = connection.cursor()
+
+            query = "SELECT ID, user_name, login_time, ip_address, logout_time, mac_address, system_id FROM log_details WHERE 1=1"
+            params = []
+
+            if username:
+                query += " AND user_name = %s"
+                params.append(username)
+
+            if start_date and end_date:
+                query += " AND login_time BETWEEN %s AND %s"
+                params.extend([start_date, end_date])
+
+            cursor.execute(query, params)
+            login_details = cursor.fetchall()
+
+            if login_details:
+                headers = ["ID", "Username", "Login Time", "IP Address", "Logout Time", "Mac Address", "System ID"]
+                show_custom_dialog("Login Details", login_details, headers)
+            else:
+                messagebox.showinfo("Login Details", "No login details found.")
+            
+        except mysql.connector.Error as err:
+            messagebox.showerror("Error", f"Error fetching login details: {err}")
+        
+        finally:
+            if connection.is_connected():
+                cursor.close()
+                connection.close()
+
+    def show_custom_dialog(title, data, headers):
+        dialog = tk.Toplevel()
+        dialog.title(title)
+        dialog.configure(bg=BG_COLOR)
+        
+        tree = ttk.Treeview(dialog, columns=headers, show="headings")
+        for header in headers:
+            tree.heading(header, text=header)
+        for row in data:
+            tree.insert("", "end", values=row)
+        tree.pack(expand=True, fill="both")
+
+        dialog.mainloop()
+
+    search_window = tk.Toplevel()
+    search_window.title("Search Login Details")
+    search_window.configure(bg=BG_COLOR)
+    
+    screen_width = search_window.winfo_screenwidth()
+    screen_height = search_window.winfo_screenheight()
+    search_window.geometry(f"{screen_width}x{screen_height}")
+
+    username_frame = tk.Frame(search_window, bg=BG_COLOR)
+    username_frame.pack(pady=10)
+
+    username_label = tk.Label(username_frame, text="Enter Username:", bg=BG_COLOR, fg=FG_COLOR)
+    username_label.grid(row=0, column=0)
+
+    username_entry = tk.Entry(username_frame, bg=BG_COLOR, fg=FG_COLOR)
+    username_entry.grid(row=0, column=1)
+
+    date_frame = tk.Frame(search_window, bg=BG_COLOR)
+    date_frame.pack(pady=10)
+
+    start_date_label = tk.Label(date_frame, text="Start Date (YYYY-MM-DD):", bg=BG_COLOR, fg=FG_COLOR)
+    start_date_label.grid(row=0, column=0)
+
+    start_date_entry = tk.Entry(date_frame, bg=BG_COLOR, fg=FG_COLOR)
+    start_date_entry.grid(row=0, column=1)
+    start_date_entry.bind("<Button-1>", lambda event: DatePicker(search_window, start_date_entry))
+
+    end_date_label = tk.Label(date_frame, text="End Date (YYYY-MM-DD):", bg=BG_COLOR, fg=FG_COLOR)
+    end_date_label.grid(row=0, column=2)
+
+    end_date_entry = tk.Entry(date_frame, bg=BG_COLOR, fg=FG_COLOR)
+    end_date_entry.grid(row=0, column=3)
+    end_date_entry.bind("<Button-1>", lambda event: DatePicker(search_window, end_date_entry))
+
+    search_button = tk.Button(date_frame, text="Search", command=search_login_details, bg=BTN_COLOR, fg=FG_COLOR)
+    search_button.grid(row=0, column=4)
+
+    search_window.mainloop()
+
+def create_gui():
+    root = tk.Tk()
+    root.title("Persistent Login Window")
+    root.configure(bg=BG_COLOR)
+
+    root.overrideredirect(True)
+    root.geometry("{0}x{1}+0+0".format(root.winfo_screenwidth(), root.winfo_screenheight()))
+
+    # Define functions for clock and login
+    def update_clock():
+        current_time = time.strftime('%H:%M:%S')
+        clock_label.config(text=current_time)
+        root.after(1000, update_clock)
+    
+    def scroll_text():
+        header_text = header_label.cget("text")
+        header_text = header_text[1:] + header_text[0]  # Move the first character to the end
+        header_label.config(text=header_text)
+        root.after(100, scroll_text)
+
+    app_font = font.Font(family="Helvetica", size=12)
+
+    # Photo
+    image = tk.PhotoImage(file=r"C:\Users\CSELAB\labsystem\images\login.png")
+    image_label = tk.Label(root, image=image, bg=BG_COLOR)
+    image_label.image = image  # Keep a reference to the image to prevent it from being garbage collected
+    image_label.pack()
+
+    # Adding the header
+    header_frame = tk.Frame(root, bg="#243f8e")  # Change background color to blue
+    header_frame.pack(fill="x")
+
+    header_label = tk.Label(header_frame, text="Under the Esteemed guidance of Mr.M.S.R.S.PRASAD M.Tech.,[Ph.D] Head of Computer Science Department. This is developed by students of Batch 2020-2024,  206K1A0518 - K.SAI LAKSHMI, 206K1A0535 - P.YESU DEEPIKA, 206K1A0528 - M.HEMANTH KUMAR, 206K1A0542 - POTHURAJU AJAY   ", 
+                            bg="#243f8e", fg="white", font=("Times of Roman", 10, "bold"), justify='left', anchor='w')  # Make text bold
+    header_label.pack(padx=10, pady=5, fill="x")
+
+    scroll_text()
+
+    main_frame = tk.Frame(root, bg=BG_COLOR)
+    main_frame.pack(expand=True)
+
+    login_frame = tk.Frame(main_frame, bg=BG_COLOR)
+    login_frame.pack(pady=10)
+      
+    username_label = tk.Label(login_frame, text="Username", font=app_font, bg=BG_COLOR, fg=FG_COLOR)
+    username_label.grid(row=0, column=0)
+    username_entry = tk.Entry(login_frame, font=app_font, bg=BG_COLOR, fg=FG_COLOR)
+    username_entry.grid(row=0, column=1, padx=5)
+
+    password_label = tk.Label(login_frame, text="Password", font=app_font, bg=BG_COLOR, fg=FG_COLOR)
+    password_label.grid(row=1, column=0)
+    password_entry = tk.Entry(login_frame, show="*", font=app_font, bg=BG_COLOR, fg=FG_COLOR)
+    password_entry.grid(row=1, column=1, padx=5)
+
+    submit_button = tk.Button(main_frame, text="Submit", command=lambda: login(username_entry.get(), password_entry.get(), root), font=app_font, bg=BTN_COLOR, fg=FG_COLOR)
+    submit_button.pack(pady=10)
+
+    # Change Password Button
+    change_password_button = tk.Button(main_frame, text="Change Password", command=lambda: change_password_page(root), font=app_font, bg="#FFFFFF", fg=BTN_COLOR, bd=2, highlightbackground="#4CAF50", highlightcolor="#FFFFFF", width=15, height=1)
+    change_password_button.pack(pady=10)
+
+    # Clock label
+    clock_label = tk.Label(main_frame, text="", font=("Courier", 40), bg=BG_COLOR, fg=FG_COLOR)
+    clock_label.pack(side=tk.LEFT, padx=10)
+    update_clock()  # Start updating the clock
+
+     # Bind the <Return> key to the login function
+    root.bind("<Return>", lambda event: login(username_entry.get(), password_entry.get(), root))
+
+    # Place the shutdown button as an icon on the right side bottom of the window
+    shutdown_button = tk.Button(root, text="Shutdown", command=shutdown_system, font=app_font, bg=BTN_COLOR, fg=FG_COLOR)
+    shutdown_button.place(relx=1.0, rely=1.0, anchor="se", x=-10, y=-10)  # Adjust the position as needed
+
+    block_keyboard()
+
+    main_frame.place(relx=0.5, rely=0.5, anchor="center")
+    
+    root.mainloop()
+    
+# Function to create a change password page
+def change_password_page(root):
+    # Function to change password
+    def change_password():
+        username = username_entry.get()
+        old_password = old_password_entry.get()
+        new_password = new_password_entry.get()
+
+        # Validate input
+        if not (username and old_password and new_password):
+            messagebox.showerror("Error", "Please enter all fields.")
+            return
+
+        try:
+            conn = mysql.connector.connect(**db_config)
+            cursor = conn.cursor()
+            
+            # Verify old password
+            query = "SELECT * FROM user_details WHERE user_name = %s AND password = %s"
+            cursor.execute(query, (username, old_password))
+            user = cursor.fetchone()
+            
+            if user:
+                # Update password
+                update_query = "UPDATE user_details SET password = %s WHERE user_name = %s"
+                cursor.execute(update_query, (new_password, username))
+                conn.commit()
+                messagebox.showinfo("Success", "Password changed successfully")
+                change_password_window.destroy()
+            else:
+                messagebox.showerror("Error", "Incorrect old password")
+            
+            cursor.close()
+            conn.close()
+            
+        except mysql.connector.Error as e:
+            messagebox.showerror("Error", f"Database error: {e}")
+
+    # Create a new window for changing password
+    change_password_window = tk.Toplevel(root)
+    change_password_window.title("Change Password")
+    change_password_window.configure(bg=BG_COLOR)
+
+    # Username
+    username_label = tk.Label(change_password_window, text="Username:", bg=BG_COLOR, fg=FG_COLOR)
+    username_label.grid(row=0, column=0, padx=10, pady=10)
+    username_entry = tk.Entry(change_password_window, bg=BG_COLOR, fg=FG_COLOR)
+    username_entry.grid(row=0, column=1, padx=10, pady=10)
+
+    # Old Password
+    old_password_label = tk.Label(change_password_window, text="Old Password:", bg=BG_COLOR, fg=FG_COLOR)
+    old_password_label.grid(row=1, column=0, padx=10, pady=10)
+    old_password_entry = tk.Entry(change_password_window, show="*", bg=BG_COLOR, fg=FG_COLOR)
+    old_password_entry.grid(row=1, column=1, padx=10, pady=10)
+
+    # New Password
+    new_password_label = tk.Label(change_password_window, text="New Password:", bg=BG_COLOR, fg=FG_COLOR)
+    new_password_label.grid(row=2, column=0, padx=10, pady=10)
+    new_password_entry = tk.Entry(change_password_window, show="*", bg=BG_COLOR, fg=FG_COLOR)
+    new_password_entry.grid(row=2, column=1, padx=10, pady=10)
+
+    # Change Password Button
+    change_password_button = tk.Button(change_password_window, text="Change Password", command=change_password, font=FONT_STYLE, bg=BTN_COLOR, fg=FG_COLOR)
+    change_password_button.grid(row=3, columnspan=2, pady=10)
+
+    change_password_window.transient(root)  # Set the change password window to be modal
+    change_password_window.grab_set()  # Prevent interaction with other windows
+    root.wait_window(change_password_window)  # Wait for the change password window to be closed
+    
+if __name__ == '__main__':
+    create_gui()
